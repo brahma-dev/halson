@@ -1,186 +1,200 @@
-(function(module, win) {
-    function HALSONResource(data) {
-        data = data || {};
+((module, win) => {
+	let baseURL = "";
 
-        if (typeof data === 'string') {
-            data = JSON.parse(data);
-        }
+	class HALSONResource {
+		constructor(data = {}) {
+			if (typeof data === "string") {
+				data = JSON.parse(data);
+			}
 
-        for (var attr in data) {
-            if (!(attr in this) && data.hasOwnProperty(attr)) {
-                this[attr] = data[attr];
-            }
-        }
+			for (const attr in data) {
+				if (!(attr in this) && data.hasOwnProperty(attr)) {
+					this[attr] = data[attr];
+				}
+			}
 
-        if (this._embedded && (typeof this._embedded === 'object')) {
-            var _embedded = {};
-            var self = this;
-            Object.keys(this._embedded).forEach(function(key) {
-                if (self._embedded.hasOwnProperty(key)) {
-                  if (Array.isArray(self._embedded[key])) {
-                    _embedded[key] = [].concat(self._embedded[key]).map(function(embed) {
-                        return createHALSONResource(embed);
-                    });
-                  } else {
-                    _embedded[key] = createHALSONResource(self._embedded[key]);
-                  }
-                }
-            });
+			if (this._embedded && typeof this._embedded === "object") {
+				const _embedded = {};
+				const self = this;
+				Object.keys(this._embedded).forEach((key) => {
+					if (self._embedded.hasOwnProperty(key)) {
+						if (Array.isArray(self._embedded[key])) {
+							_embedded[key] = []
+								.concat(self._embedded[key])
+								.map((embed) => createHALSONResource(embed));
+						} else {
+							_embedded[key] = createHALSONResource(self._embedded[key]);
+						}
+					}
+				});
 
-            this._embedded = _embedded;
-        }
+				this._embedded = _embedded;
+			}
+		}
 
-    }
+		_invert(filterCallback) {
+			return function(...args) {
+				return !filterCallback.apply(null, args);
+			};
+		}
 
-    HALSONResource.prototype.className = 'HALSONResource';
+		listLinkRels() {
+			return this._links ? Object.keys(this._links) : [];
+		}
 
-    HALSONResource.prototype._invert = function(filterCallback) {
-        return function() {
-            return !filterCallback.apply(null, arguments);
-        };
-    };
+		listEmbedRels() {
+			return this._embedded ? Object.keys(this._embedded) : [];
+		}
 
-    HALSONResource.prototype.listLinkRels = function() {
-        return this._links ? Object.keys(this._links) : [];
-    };
+		getLinks(rel, filterCallback, begin, end) {
+			if (!this._links || !(rel in this._links)) {
+				return [];
+			}
 
-    HALSONResource.prototype.listEmbedRels = function() {
-        return this._embedded ? Object.keys(this._embedded) : [];
-    };
+			let links = [].concat(this._links[rel]);
 
-    HALSONResource.prototype.getLinks = function(rel, filterCallback, begin, end) {
-        if (!this._links || !(rel in this._links)) {
-            return [];
-        }
+			if (filterCallback) {
+				links = links.filter(filterCallback);
+			}
 
-        var links = [].concat(this._links[rel]);
+			return links.slice(begin || 0, end || links.length);
+		}
 
-        if (filterCallback) {
-            links = links.filter(filterCallback);
-        }
+		getLink(rel, filterCallback, def) {
+			if (typeof filterCallback !== "function") {
+				def = filterCallback;
+				filterCallback = null;
+			}
+			return this.getLinks(rel, filterCallback, 0, 1)[0] || def;
+		}
 
-        return links.slice(begin || 0, end || links.length);
-    };
+		getEmbeds(rel, filterCallback, begin, end) {
+			if (!this._embedded || !(rel in this._embedded)) {
+				return [];
+			}
 
-    HALSONResource.prototype.getLink = function(rel, filterCallback, def) {
-        if (typeof filterCallback !== 'function') {
-            def = filterCallback;
-            filterCallback = null;
-        }
-        return this.getLinks(rel, filterCallback, 0, 1)[0] || def;
-    };
+			let items = [].concat(this._embedded[rel]);
 
-    HALSONResource.prototype.getEmbeds = function(rel, filterCallback, begin, end) {
-        if (!this._embedded || !(rel in this._embedded)) {
-            return [];
-        }
+			if (filterCallback) {
+				items = items.filter(filterCallback);
+			}
 
-        var items = [].concat(this._embedded[rel]);
+			return items.slice(begin || 0, end || items.length);
+		}
 
-        if (filterCallback) {
-            items = items.filter(filterCallback);
-        }
+		getEmbed(rel, filterCallback, def) {
+			if (typeof filterCallback !== "function") {
+				def = filterCallback;
+				filterCallback = null;
+			}
+			return this.getEmbeds(rel, filterCallback, 0, 1)[0] || def;
+		}
 
-        return items.slice(begin || 0, end || items.length);
-    };
+		addLink(rel, link) {
+			link = baseURL + link;
+			if (typeof link === "string") {
+				link = { href: link };
+			}
 
-    HALSONResource.prototype.getEmbed = function(rel, filterCallback, def) {
-        if (typeof filterCallback !== 'function') {
-            def = filterCallback;
-            filterCallback = null;
-        }
-        return this.getEmbeds(rel, filterCallback, 0, 1)[0] || def;
-    };
+			if (!this._links) {
+				this._links = {};
+			}
 
-    HALSONResource.prototype.addLink = function(rel, link) {
-        if (typeof link === 'string') {
-            link = {href: link};
-        }
+			if (!(rel in this._links)) {
+				// single link
+				this._links[rel] = link;
+			} else {
+				// multiple links
+				this._links[rel] = [].concat(this._links[rel]);
+				this._links[rel].push(link);
+			}
 
-        if (!this._links) {
-            this._links = {};
-        }
+			return this;
+		}
 
-        if (!(rel in this._links)) {
-            // single link
-            this._links[rel] = link;
-        } else {
-            // multiple links
-            this._links[rel] = [].concat(this._links[rel]);
-            this._links[rel].push(link);
-        }
+		addEmbed(rel, embed) {
+			return this.insertEmbed(rel, -1, embed);
+		}
 
-        return this;
-    };
+		insertEmbed(rel, index, embed) {
+			if (!this._embedded) {
+				this._embedded = {};
+			}
 
-    HALSONResource.prototype.addEmbed = function(rel, embed) {
-        return this.insertEmbed(rel, -1, embed);
-    };
+			if (!(rel in this._embedded)) {
+				this._embedded[rel] = Array.isArray(embed)
+					? embed.map(createHALSONResource)
+					: createHALSONResource(embed);
+				return this;
+			}
 
-    HALSONResource.prototype.insertEmbed = function(rel, index, embed) {
-        if (!this._embedded) {
-            this._embedded = {};
-        }
+			const items = [].concat(embed).map(createHALSONResource);
 
-        if (!(rel in this._embedded)) {
-            this._embedded[rel] = Array.isArray(embed) ? embed.map(createHALSONResource) : createHALSONResource(embed);
-            return this;
-        }
+			this._embedded[rel] = [].concat(this._embedded[rel]);
 
-        var items = [].concat(embed).map(createHALSONResource);
+			if (index < 0) {
+				Array.prototype.push.apply(this._embedded[rel], items);
+			} else {
+				const params = [index, 0].concat(items);
+				Array.prototype.splice.apply(this._embedded[rel], params);
+			}
 
-        this._embedded[rel] = [].concat(this._embedded[rel]);
+			return this;
+		}
 
-        if (index < 0) {
-            Array.prototype.push.apply(this._embedded[rel], items);
-        } else {
-            var params = [index, 0].concat(items);
-            Array.prototype.splice.apply(this._embedded[rel], params);
-        }
+		removeLinks(rel, filterCallback) {
+			if (!this._links || !(rel in this._links)) {
+				return;
+			}
 
-        return this;
-    };
+			if (!filterCallback) {
+				delete this._links[rel];
+			} else {
+				this._links[rel] = []
+					.concat(this._links[rel])
+					.filter(this._invert(filterCallback));
+			}
 
-    HALSONResource.prototype.removeLinks = function(rel, filterCallback) {
-        if (!this._links || !(rel in this._links)) {
-            return;
-        }
+			return this;
+		}
 
-        if (!filterCallback) {
-            delete(this._links[rel]);
-        } else {
-            this._links[rel] = [].concat(this._links[rel]).filter(this._invert(filterCallback));
-        }
+		removeEmbeds(rel, filterCallback) {
+			if (!this._embedded || !(rel in this._embedded)) {
+				return;
+			}
 
-        return this;
-    };
+			if (!filterCallback) {
+				return delete this._embedded[rel];
+			}
 
-    HALSONResource.prototype.removeEmbeds = function(rel, filterCallback) {
-        if (!this._embedded || !(rel in this._embedded)) {
-            return;
-        }
+			this._embedded[rel] = []
+				.concat(this._embedded[rel])
+				.filter(this._invert(filterCallback));
 
-        if (!filterCallback) {
-            return delete(this._embedded[rel]);
-        }
+			return this;
+		}
+	}
 
-        this._embedded[rel] = [].concat(this._embedded[rel]).filter(this._invert(filterCallback));
+	HALSONResource.prototype.className = "HALSONResource";
 
-        return this;
-    };
+	let createHALSONResource = (data) => {
+		if (data && data.className === HALSONResource.prototype.className) {
+			return data;
+		}
+		return new HALSONResource(data);
+	};
 
-    function createHALSONResource(data) {
-        if (data && (data.className === HALSONResource.prototype.className)) {
-            return data;
-        }
-        return new HALSONResource(data);
-    }
+	createHALSONResource.Resource = HALSONResource;
+	createHALSONResource.setBaseURL = (url) => {
+		baseURL = url;
+	};
 
-    createHALSONResource.Resource = HALSONResource;
-
-    if (module) {
-        module.exports = createHALSONResource;
-    } else if (win) {
-        win.halson = createHALSONResource;
-    }
-})(typeof(module) === 'undefined' ? null : module, typeof(window) === 'undefined' ? null : window);
+	if (module) {
+		module.exports = createHALSONResource;
+	} else if (win) {
+		win.halson = createHALSONResource;
+	}
+})(
+	typeof module === "undefined" ? null : module,
+	typeof window === "undefined" ? null : window
+);
